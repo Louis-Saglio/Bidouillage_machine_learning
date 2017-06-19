@@ -1,10 +1,12 @@
 from random import randint, choice
+from statistics import mean
 
 import networkx as nx
 import matplotlib.pyplot as plt
+from copy import deepcopy
 
 
-class BadParmetreTypeError(BaseException):
+class InvalidOrder(BaseException):
     pass
 
 
@@ -40,10 +42,10 @@ class Nodes(list):
 
     def reduce_pheromone(self):
         for node in self:
-            if node.pheromone > 0.1:
-                node.pheromone -= 0.1
+            if node.pheromone > 1.1:
+                node.pheromone -= 0.2
             else:
-                node.pheromone = 0.0
+                node.pheromone = 1.0
 
 
 class Node:
@@ -57,7 +59,7 @@ class Node:
         self.connecteds = []
         x, y = randint(0, limits[0]) if x is None else x, randint(0, limits[1]) if y is None else y
         self.position = (x, y)
-        self.pheromone = 0
+        self.pheromone = 1
 
     def __str__(self):
         # return str(self.__dict__)
@@ -83,10 +85,24 @@ class Node:
         other.connecteds.append(self)
 
 
-class Fourmi:
-    fourmis = []
+class Fourmis(list):
 
-    def __init__(self, depart: Node, base: Node=None, objectif: Node=None):
+    @staticmethod
+    def auto_create(depart: Node, objectif: Node):
+        Fourmi(depart, objectif=objectif)
+
+    def run(self):
+        for fourmi in self:
+            fourmi.run()
+
+    def moyenne(self):
+        return mean([len(fourmi.itineraire) for fourmi in self if fourmi.itineraire is not None])
+
+
+class Fourmi:
+    fourmis = Fourmis()
+
+    def __init__(self, depart: Node, objectif: Node):
         Fourmi.fourmis.append(self)
         self.depart = depart
         self.position = depart
@@ -95,11 +111,21 @@ class Fourmi:
         self.historique = []
         self.check_errors()
         self.ordre = "Find"
+        self.all = []
+        self.itineraire = None
 
     def move(self, node: Node):
-        self.historique.append(self.position)
-        self.position.pheromone += 1
+        self.all.append(node)
+        if self.ordre == "Back":
+            self.position.pheromone += 1
+        elif self.ordre == "Find":
+            self.historique.append(node)
         self.position = node
+        if self.position == self.objectif:
+            self.ordre = "Back"
+            self.itineraire = deepcopy(self.historique)
+        elif self.position == self.base:
+            self.ordre = "Find"
 
     def __str__(self):
         return str(self.__dict__)
@@ -107,11 +133,31 @@ class Fourmi:
     def __repr__(self):
         return self.__str__()
 
+    def decide(self):
+        if self.ordre == "Find":
+            possibles = []
+            for conn in self.position.connecteds:
+                for _ in range(int(conn.pheromone)):
+                    possibles.append(conn)
+                if len(self.historique) > 1:
+                    while self.historique[-2] in possibles:
+                        possibles.remove(self.historique[-2])
+            return choice(possibles)
+        elif self.ordre == "Back":
+            if self.objectif in self.historique:
+                self.historique.remove(self.objectif)
+            return self.historique.pop(-1)
+        else:
+            raise InvalidOrder(f"Ordre invalid {self.ordre}")
+
     def check_errors(self):
         if not hasattr(self.depart, "connecteds") and not hasattr(self.base, "connecteds")\
                 and not (hasattr(self.objectif, "connecteds") or self.objectif is None):
             raise TypeError(f"self.depart and self.base must have an attribute connecteds wich give the "
                             f"connected points in the map")
+
+    def run(self):
+        self.move(self.decide())
 
 
 if __name__ == '__main__':
@@ -120,12 +166,15 @@ if __name__ == '__main__':
     carte = Node.nodes
     carte.auto_connect()
     base = carte[0]
-    obj = carte[-1]
+    obj = carte[randint(1, len(carte)-1)]
     base.id = "D"
     obj.id = "A"
-    f1 = Fourmi(carte[0], objectif=carte[-1])
-    for _ in range(3):
+    f1 = Fourmi(base, objectif=obj)
+    for _ in range(200):
         carte.reduce_pheromone()
-        f1.move(choice(f1.position.connecteds))
+        f1.move(f1.decide())
+    # while f1.position != obj:
+    #     carte.reduce_pheromone()
+    #     f1.run()
     print(f1)
     carte.show()
